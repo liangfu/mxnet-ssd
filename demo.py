@@ -1,7 +1,9 @@
+import os
+os.environ["MXNET_EXAMPLE_SSD_DISABLE_PRE_INSTALLED"]='1'
+
 import argparse
 import tools.find_mxnet
 import mxnet as mx
-import os
 import sys
 from detect.detector import Detector
 from symbol.symbol_factory import get_symbol
@@ -106,8 +108,9 @@ if __name__ == '__main__':
         ctx = mx.gpu(args.gpu_id)
 
     # parse image list
-    image_list = [i.strip() for i in args.images.split(',')]
-    assert len(image_list) > 0, "No valid image specified to detect"
+    # image_list = [i.strip() for i in args.images.split(',')]
+    # assert len(image_list) > 0, "No valid image specified to detect"
+    imgname = args.images
 
     network = None if args.deploy_net else args.network
     class_names = parse_class_names(args.class_names)
@@ -120,5 +123,5 @@ if __name__ == '__main__':
                             (args.mean_r, args.mean_g, args.mean_b),
                             ctx, len(class_names), args.nms_thresh, args.force_nms)
     # run detection
-    detector.detect_and_visualize(image_list, args.dir, args.extension,
+    detector.detect_and_visualize(imgname, args.dir, args.extension,
                                   class_names, args.thresh, args.show_timer)
