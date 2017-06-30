@@ -4,6 +4,40 @@ import numpy as np
 from timeit import default_timer as timer
 from dataset.testdb import TestDB
 from dataset.iterator import DetIter
+import cv2
+
+def resize(im, target_size, max_size):
+    """
+    only resize input image to target size and return scale
+    :param im: BGR image input by opencv
+    :param target_size: one dimensional size (the short side)
+    :param max_size: one dimensional max size (the long side)
+    :param stride: if given, pad the image to designated stride
+    :return:
+    """
+    im_shape = im.shape
+    im_size_min = np.min(im_shape[0:2])
+    im_size_max = np.max(im_shape[0:2])
+    im_scale = float(target_size) / float(im_size_min)
+    # prevent bigger axis from being more than max_size:
+    if np.round(im_scale * im_size_max) > max_size:
+        im_scale = float(max_size) / float(im_size_max)
+    im = cv2.resize(im, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_LINEAR)
+    return im, im_scale
+
+
+def transform(im, pixel_means):
+    """
+    transform into mxnet tensor
+    substract pixel size and transform to correct format
+    :param im: [height, width, channel] in BGR
+    :param pixel_means: [B, G, R pixel means]
+    :return: [batch, channel, height, width]
+    """
+    im_tensor = np.zeros((1, 3, im.shape[0], im.shape[1]))
+    for i in range(3):
+        im_tensor[0, i, :, :] = im[:, :, 2 - i] - pixel_means[2 - i]
+    return im_tensor
 
 class Detector(object):
     """
@@ -128,7 +162,7 @@ class Detector(object):
         list of detection results in format [det0, det1...], det is in
         format np.array([id, score, xmin, ymin, xmax, ymax]...)
         """
-        data = img # reshape to ('data', (1L, 3L, 512L, 512L))
+        data = transform(img, self.mean_pixels) # reshape to ('data', (1L, 3L, 512L, 512L))
         test_iter = mx.io.NDArrayIter(data={'data':data},label={},batch_size=1)
         return self.detect(test_iter, show_timer)
 
@@ -190,7 +224,6 @@ class Detector(object):
         ----------
 
         """
-        import cv2
         if imgname.endswith(".png") or imgname.endswith(".jpg"):
             # img = cv2.imread(imgname)
             dets = self.im_detect(imgname, root_dir, extension, show_timer=show_timer)
@@ -199,14 +232,15 @@ class Detector(object):
                 img[:, :, (0, 1, 2)] = img[:, :, (2, 1, 0)]
                 self.visualize_detection(img, det, classes, thresh)
                 cv2.waitKey()
-        elif imgname.endswith(".mp4") or imgname.endswith(".avi"):
-            cap = cv2.VideoCapture(imgname)
-            _, img = cap.read()
-            dets = self.im_detect_single(img, show_timer=False)
-            for k, det in enumerate(dets):
-                img = cv2.imread(imgname)
+        elif imgname.endswith(".mp4") or imgname.endswith(".avi") or imgname.isdigit():
+            cap = cv2.VideoCapture(int(imgname) if imgname.isdigit() else imgname)
+            while 1:
+                _, img = cap.read()
+                img, im_scale = resize(img, 600, 720)
+                dets = self.im_detect_single(img, show_timer=True)[0]
                 img[:, :, (0, 1, 2)] = img[:, :, (2, 1, 0)]
-                self.visualize_detection(img, det, classes, thresh)
-                cv2.waitKey(1)
+                self.visualize_detection(img, dets, classes, thresh)
+                if cv2.waitKey(1)&0xff==27:
+                    break
         else:
             raise IOError("unknown file extention, only .png/.jpg/.mp4/.avi files are supported.")    
